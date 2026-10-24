@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { HealthResponse } from '../types/api';
 import { getHealth } from '../services/api';
-import { StatusDot, ModeBadge, Spinner } from '../components/ui/Badges';
+import { StatusDot, ModeBadge, Spinner, ErrorBanner } from '../components/ui/Badges';
 
 export const HealthPage: React.FC = () => {
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -20,74 +20,88 @@ export const HealthPage: React.FC = () => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const componentLabels: Record<string, { name: string; desc: string }> = {
-    groq_llm: { name: 'Groq LLM', desc: 'Powers contextual analysis (Layer 2). Set GROQ_API_KEY to enable.' },
-    langsmith: { name: 'LangSmith', desc: 'Distributed trace observability. Set LANGSMITH_API_KEY and LANGSMITH_TRACING=true.' },
-    chromadb: { name: 'ChromaDB', desc: 'Vector similarity for attack examples. Optional Layer 4 feature.' },
-    database: { name: 'SQLite Database', desc: 'Persistent storage for security events and evaluation results.' },
+    scanner: { name: 'Deterministic Scanner', desc: 'Fast regex-based pattern matching (Layer 1). Always active.' },
+    groq_llm: { name: 'Groq LLM Contextual Judge', desc: 'Deep semantic classification (Layer 2). Requires GROQ_API_KEY.' },
+    session_store: { name: 'Session Correlation Store', desc: 'Multi-turn drift detection (Layer 3). Tracks per-session risk escalation.' },
+    policy_gate: { name: 'Deterministic Policy Gate', desc: 'Final security authority (Layer 4). Computes mathematical risk weights.' },
+    database: { name: 'SQLite Persistence', desc: 'Local audit log storage for events and evaluation metrics.' },
+    langsmith: { name: 'LangSmith Distributed Tracing', desc: 'Optional end-to-end trace collection and latency profiling.' },
   };
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white mb-1">System Health</h1>
-          <p className="text-slate-400 text-sm">Component availability and current execution mode.</p>
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+            System & Component Health
+          </h1>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+            Real-time status of pipeline detectors, LLM judge connectivity, and persistence layers.
+          </p>
         </div>
         <button onClick={load} className="btn-ghost flex items-center gap-2">
-          {loading ? <Spinner className="w-4 h-4" /> : null}
-          Refresh
+          {loading && <Spinner className="w-3.5 h-3.5" />}
+          <span>Refresh</span>
         </button>
       </div>
 
       {error && (
-        <div className="bg-cyber-red/10 border border-cyber-red/30 rounded-xl p-6 text-center">
-          <div className="text-cyber-red font-bold mb-2">Backend Unavailable</div>
-          <p className="text-slate-400 text-sm">
-            Start the backend: <code className="font-mono bg-navy-900 px-2 py-0.5 rounded text-cyber-blue">
-              cd backend && uvicorn app.main:app --reload --port 8000
-            </code>
-          </p>
-        </div>
+        <ErrorBanner message="Backend API is offline or unreachable. Run: uvicorn app.main:app --reload --port 8000" />
       )}
 
       {health && (
         <div className="space-y-4">
-          {/* Overall Status */}
-          <div className="card-cyber flex items-center gap-4">
-            <div className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl ${
-              health.status === 'healthy' ? 'bg-cyber-green/20' : 'bg-cyber-amber/20'
-            }`}>
-              {health.status === 'healthy' ? '✓' : '⚠'}
-            </div>
-            <div>
-              <div className="font-bold text-white capitalize">{health.status}</div>
-              <div className="text-slate-400 text-sm">
-                Last checked: {new Date(health.timestamp).toLocaleString()}
+          {/* Status Header Card */}
+          <div className="card flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <StatusDot status={health.status} />
+              <div>
+                <div className="font-semibold text-sm text-slate-900 dark:text-slate-100 capitalize">
+                  System Status: {health.status}
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Last verified: {new Date(health.timestamp).toLocaleTimeString()}
+                </div>
               </div>
             </div>
-            <div className="ml-auto">
+            <div>
               <ModeBadge mode={health.execution_mode} />
             </div>
           </div>
 
-          {/* Component Cards */}
+          {/* Component Grid */}
           <div className="grid md:grid-cols-2 gap-4">
             {health.components.map(c => {
               const meta = componentLabels[c.name] ?? { name: c.name, desc: '' };
               return (
-                <div key={c.name} className="card">
-                  <div className="flex items-center gap-3 mb-2">
-                    <StatusDot status={c.available ? 'healthy' : 'error'} />
-                    <h3 className="font-semibold text-white">{meta.name}</h3>
-                    <span className={`ml-auto text-xs font-semibold ${c.available ? 'text-cyber-green' : 'text-cyber-red'}`}>
-                      {c.available ? 'AVAILABLE' : 'UNAVAILABLE'}
+                <div key={c.name} className="card space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <StatusDot status={c.available ? 'healthy' : 'error'} />
+                      <h3 className="font-semibold text-xs text-slate-900 dark:text-slate-100">
+                        {meta.name}
+                      </h3>
+                    </div>
+                    <span className={`text-[10px] font-mono font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                      c.available
+                        ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                    }`}>
+                      {c.available ? 'Ready' : 'Not Active'}
                     </span>
                   </div>
-                  <p className="text-slate-400 text-xs mb-2">{meta.desc}</p>
-                  <div className="text-xs font-mono bg-navy-900 px-2 py-1 rounded text-slate-400">
+
+                  <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                    {meta.desc}
+                  </p>
+
+                  <div className="font-mono text-[11px] p-2 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300">
                     {c.detail}
                   </div>
                 </div>
@@ -95,41 +109,31 @@ export const HealthPage: React.FC = () => {
             })}
           </div>
 
-          {/* Execution Mode Explanation */}
-          <div className="card border-l-2 border-cyber-blue/40">
-            <h2 className="font-semibold text-white mb-3">Execution Mode: {health.execution_mode}</h2>
+          {/* Operational Mode Policy */}
+          <div className="card border-l-3 border-slate-400 dark:border-slate-600">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">
+              Operational Mode Architecture
+            </h2>
             {health.execution_mode === 'FULL' ? (
-              <p className="text-slate-300 text-sm">
-                All components are available. Groq LLM provides contextual analysis alongside the deterministic scanner and policy gate.
-              </p>
-            ) : health.execution_mode === 'DEGRADED' ? (
-              <p className="text-slate-300 text-sm">
-                Some components are unavailable. Core security functions (scanner + policy gate) remain operational with reduced accuracy.
+              <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                Operating in <strong>FULL</strong> mode. The Groq LLM contextual judge is active and provides semantic intent analysis. The deterministic policy gate combines LLM signals with the fast scanner and session correlation.
               </p>
             ) : (
-              <p className="text-slate-300 text-sm">
-                <strong>LOCAL_BASELINE mode:</strong> Groq is not configured. Only deterministic pattern matching and the policy gate are active.
-                The system will correctly detect many common attacks but lacks LLM-based contextual reasoning.
-                Set GROQ_API_KEY to enable full mode.
-              </p>
+              <div className="space-y-1.5 text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                <p>
+                  Operating in <strong>LOCAL_BASELINE</strong> mode. The deterministic scanner, session correlation, and policy gate are fully functional without external API keys.
+                </p>
+                <p className="text-slate-500 dark:text-slate-400">
+                  To activate Layer 2 Groq contextual reasoning, add your API key in <code className="font-mono bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded">backend/.env</code>:
+                  <code className="block mt-1 font-mono text-[11px] bg-slate-100 dark:bg-slate-800 p-2 rounded">
+                    GROQ_API_KEY=your_groq_api_key_here
+                  </code>
+                </p>
+              </div>
             )}
           </div>
         </div>
       )}
-
-      {/* Configuration Guide */}
-      <div className="card">
-        <h2 className="font-semibold text-white mb-4">Configuration</h2>
-        <div className="code-block space-y-1">
-          <div><span className="text-slate-500"># Backend: backend/.env</span></div>
-          <div><span className="text-cyber-cyan">GROQ_API_KEY</span>=<span className="text-cyber-amber">your-key-here</span></div>
-          <div><span className="text-cyber-cyan">GROQ_MODEL</span>=<span className="text-cyber-amber">llama-3.1-8b-instant</span></div>
-          <div><span className="text-cyber-cyan">LANGSMITH_TRACING</span>=<span className="text-cyber-amber">true</span> <span className="text-slate-500"># optional</span></div>
-          <div><span className="text-cyber-cyan">LANGSMITH_API_KEY</span>=<span className="text-cyber-amber">your-langsmith-key</span></div>
-          <div className="mt-2"><span className="text-slate-500"># Frontend: frontend/.env</span></div>
-          <div><span className="text-cyber-cyan">VITE_API_BASE_URL</span>=<span className="text-cyber-amber">http://localhost:8000</span></div>
-        </div>
-      </div>
     </div>
   );
 };

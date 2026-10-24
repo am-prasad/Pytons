@@ -1,6 +1,6 @@
 import React from 'react';
-import type { AnalyzeResponse } from '../../types/api';
-import { RiskScoreRing, DecisionBadge, RiskBadge, StatusDot } from '@/components/ui/Badges';
+import type { AnalyzeResponse } from '../types/api';
+import { RiskScoreRing, DecisionBadge, RiskBadge, StatusDot } from './ui/Badges';
 
 interface ResultsPanelProps {
   result: AnalyzeResponse;
@@ -8,34 +8,51 @@ interface ResultsPanelProps {
 
 export const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
   return (
-    <div className="space-y-4 animate-fade-in">
-      {/* Top Summary Row */}
-      <div className="card-cyber grid grid-cols-2 md:grid-cols-4 gap-6 items-center">
+    <div className="space-y-4">
+      {/* Top Summary Card */}
+      <div className="card grid grid-cols-2 sm:grid-cols-4 gap-6 items-center">
         <div className="flex justify-center">
-          <RiskScoreRing score={result.risk_score} size={100} />
+          <RiskScoreRing score={result.risk_score} size={88} />
         </div>
-        <div className="space-y-2">
-          <div className="section-title">Policy Decision</div>
-          <DecisionBadge decision={result.policy_decision} large />
+        <div className="space-y-1.5">
+          <div className="section-title mb-1">Policy Decision</div>
+          <div>
+            <DecisionBadge decision={result.policy_decision} large />
+          </div>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400">
+            Enforced by Policy Gate
+          </div>
         </div>
-        <div className="space-y-2">
-          <div className="section-title">Risk Category</div>
-          <RiskBadge category={result.risk_category} />
+        <div className="space-y-1.5">
+          <div className="section-title mb-1">Risk Band</div>
+          <div>
+            <RiskBadge category={result.risk_category} />
+          </div>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+            {result.risk_score.toFixed(1)} / 100
+          </div>
         </div>
-        <div className="space-y-2">
-          <div className="section-title">Latency</div>
-          <div className="text-cyber-blue font-mono text-lg">{result.latency_ms.toFixed(0)} ms</div>
-          <div className="text-xs text-slate-500">Mode: {result.execution_mode}</div>
+        <div className="space-y-1.5">
+          <div className="section-title mb-1">Latency & Mode</div>
+          <div className="font-mono text-lg font-bold text-slate-900 dark:text-slate-100">
+            {result.latency_ms.toFixed(0)} ms
+          </div>
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+            Mode: {result.execution_mode}
+          </div>
         </div>
       </div>
 
-      {/* Attack Types */}
+      {/* Detected Threats */}
       {result.attack_types.length > 0 && (
         <div className="card">
-          <div className="section-title">Detected Attack Types</div>
+          <div className="section-title">Detected Attack Signatures</div>
           <div className="flex flex-wrap gap-2">
             {result.attack_types.map(t => (
-              <span key={t} className="px-3 py-1 bg-cyber-red/10 border border-cyber-red/30 rounded-full text-cyber-red text-xs font-semibold uppercase">
+              <span
+                key={t}
+                className="px-2.5 py-1 rounded bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-900 text-xs font-mono font-medium uppercase"
+              >
                 {t.replace(/_/g, ' ')}
               </span>
             ))}
@@ -45,91 +62,105 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
 
       {/* Policy Explanation */}
       <div className="card">
-        <div className="section-title">Policy Explanation</div>
-        <p className="text-slate-300 text-sm leading-relaxed">{result.policy_result.explanation}</p>
+        <div className="section-title">Enforcement Rationale</div>
+        <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+          {result.policy_result.explanation}
+        </p>
         {result.policy_result.blocked_reason && (
-          <div className="mt-3 px-3 py-2 bg-cyber-red/5 border-l-2 border-cyber-red rounded text-cyber-red text-xs">
-            Blocked: {result.policy_result.blocked_reason}
+          <div className="mt-3 p-2.5 bg-rose-50 dark:bg-rose-950/50 border-l-3 border-rose-600 rounded-r text-xs text-rose-800 dark:text-rose-300 font-mono">
+            Block Rule: {result.policy_result.blocked_reason}
           </div>
         )}
       </div>
 
-      {/* Scanner + Contextual side by side */}
+      {/* Two Columns: Fast Scanner (Layer 1) & Contextual Analyzer (Layer 2) */}
       <div className="grid md:grid-cols-2 gap-4">
-        {/* Scanner Findings */}
+        {/* Layer 1: Scanner */}
         <div className="card">
-          <div className="section-title">Layer 1: Fast Scanner</div>
-          <div className="flex items-center gap-3 mb-3">
-            <div className="text-2xl font-bold text-cyber-blue font-mono">
-              {result.scanner_findings.raw_score.toFixed(0)}
-            </div>
-            <span className="text-slate-400 text-sm">/ 100</span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="section-title mb-0">Layer 1 · Fast Screening</span>
+            <span className="text-xs font-mono font-semibold text-slate-700 dark:text-slate-300">
+              Raw Score: {result.scanner_findings.raw_score.toFixed(0)}/100
+            </span>
           </div>
+
           {result.scanner_findings.patterns_matched.length > 0 ? (
-            <div className="space-y-1">
-              {result.scanner_findings.patterns_matched.slice(0, 6).map((p, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <span className="text-cyber-red mt-0.5">▸</span>
-                  <span className="font-mono text-slate-300">{p}</span>
-                </div>
-              ))}
-              {result.scanner_findings.patterns_matched.length > 6 && (
-                <div className="text-xs text-slate-500">
-                  +{result.scanner_findings.patterns_matched.length - 6} more patterns
-                </div>
-              )}
+            <div className="space-y-1.5 mt-3">
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Matched {result.scanner_findings.patterns_matched.length} heuristic patterns:
+              </div>
+              <ul className="space-y-1 text-xs">
+                {result.scanner_findings.patterns_matched.map((p, idx) => (
+                  <li key={idx} className="flex items-center gap-2 font-mono text-slate-800 dark:text-slate-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 flex-shrink-0" />
+                    <span>{p}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           ) : (
-            <div className="text-slate-500 text-xs">No patterns matched</div>
+            <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+              No known hostile patterns matched in fast heuristic catalog.
+            </div>
           )}
         </div>
 
-        {/* Contextual Analysis */}
+        {/* Layer 2: Contextual Analysis */}
         <div className="card">
-          <div className="section-title">Layer 2: Contextual Analysis</div>
-          <div className="space-y-2 mb-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Attack Category</span>
-              <span className="text-cyber-blue font-semibold capitalize">
+          <div className="flex items-center justify-between mb-2">
+            <span className="section-title mb-0">Layer 2 · Contextual Judge</span>
+            <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+              {result.contextual_findings.provider}
+            </span>
+          </div>
+
+          <div className="space-y-2 mt-3 text-xs">
+            <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400">Classification</span>
+              <span className="font-semibold text-slate-800 dark:text-slate-200 uppercase">
                 {result.contextual_findings.attack_category.replace(/_/g, ' ')}
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Confidence</span>
-              <span className="text-slate-200 font-mono">
+            <div className="flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-800">
+              <span className="text-slate-500 dark:text-slate-400">Confidence</span>
+              <span className="font-mono font-semibold text-slate-800 dark:text-slate-200">
                 {(result.contextual_findings.confidence * 100).toFixed(0)}%
               </span>
             </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Provider</span>
-              <span className="text-slate-400 text-xs bg-navy-700 px-2 py-0.5 rounded">
-                {result.contextual_findings.provider}
-              </span>
+            <div className="flex items-center justify-between py-1">
+              <span className="text-slate-500 dark:text-slate-400">Recommended Action</span>
+              <DecisionBadge decision={result.contextual_findings.recommended_action} />
             </div>
+
+            {result.contextual_findings.note && (
+              <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 italic">
+                {result.contextual_findings.note}
+              </div>
+            )}
           </div>
-          {result.contextual_findings.note && (
-            <div className="text-xs text-slate-500 italic">{result.contextual_findings.note}</div>
-          )}
         </div>
       </div>
 
-      {/* Evidence */}
+      {/* Evidence Trail */}
       {result.evidence.length > 0 && (
         <div className="card">
-          <div className="section-title">Evidence ({result.evidence.length} indicators)</div>
-          <div className="space-y-2">
-            {result.evidence.slice(0, 8).map((e, i) => (
-              <div key={i} className="flex items-start gap-3 p-2 bg-navy-900 rounded-lg">
-                <span className={`text-xs px-1.5 py-0.5 rounded flex-shrink-0 mt-0.5 ${
-                  e.layer === 'scanner' ? 'bg-cyber-blue/10 text-cyber-blue' :
-                  e.layer === 'contextual' ? 'bg-cyber-purple/10 text-purple-400' :
-                  'bg-slate-700 text-slate-400'
-                }`}>
-                  {e.layer}
+          <div className="section-title">Evidence & Extraction Artifacts</div>
+          <div className="space-y-2 mt-2">
+            {result.evidence.slice(0, 6).map((item, idx) => (
+              <div
+                key={idx}
+                className="p-2.5 rounded bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex items-start gap-3"
+              >
+                <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 flex-shrink-0 mt-0.5">
+                  {item.layer}
                 </span>
-                <div>
-                  <div className="text-xs font-mono text-amber-400 mb-0.5 line-clamp-1">{e.text}</div>
-                  <div className="text-xs text-slate-500">{e.indicator}</div>
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-mono text-xs text-amber-700 dark:text-amber-400 truncate">
+                    "{item.text}"
+                  </div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                    {item.indicator}
+                  </div>
                 </div>
               </div>
             ))}
@@ -137,57 +168,32 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
         </div>
       )}
 
-      {/* Session Correlation */}
-      {result.session_id && (
+      {/* Execution Nodes / Pipeline Trace */}
+      {result.workflow_nodes && result.workflow_nodes.length > 0 && (
         <div className="card">
-          <div className="section-title">Session Correlation</div>
-          <div className="grid grid-cols-3 gap-4 text-sm">
-            <div>
-              <div className="text-slate-400 text-xs">Prior Risk Events</div>
-              <div className={`text-lg font-bold ${
-                result.session_correlation.prior_risk_events > 0 ? 'text-cyber-amber' : 'text-cyber-green'
-              }`}>
-                {result.session_correlation.prior_risk_events}
+          <div className="section-title">LangGraph Checkpoint Pipeline</div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-2">
+            {result.workflow_nodes.map((node, i) => (
+              <div key={i} className="py-2 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <StatusDot status={node.status} />
+                  <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                    {node.name}
+                  </span>
+                  {node.detail && (
+                    <span className="text-slate-400 dark:text-slate-500 text-[11px]">
+                      — {node.detail}
+                    </span>
+                  )}
+                </div>
+                <span className="font-mono text-slate-500 dark:text-slate-400 text-[11px]">
+                  {node.duration_ms.toFixed(1)} ms
+                </span>
               </div>
-            </div>
-            <div>
-              <div className="text-slate-400 text-xs">Risk Boost</div>
-              <div className="text-lg font-bold text-cyber-orange font-mono">
-                +{result.session_correlation.session_risk_boost.toFixed(0)}
-              </div>
-            </div>
-            <div>
-              <div className="text-slate-400 text-xs">Escalation</div>
-              <div className={`text-lg font-bold ${
-                result.session_correlation.escalation_detected ? 'text-cyber-red' : 'text-cyber-green'
-              }`}>
-                {result.session_correlation.escalation_detected ? 'DETECTED' : 'None'}
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
-
-      {/* Workflow Nodes */}
-      <div className="card">
-        <div className="section-title">LangGraph Execution Path</div>
-        <div className="space-y-2">
-          {result.workflow_nodes.map((node, i) => (
-            <div key={i} className="flex items-center gap-3 text-sm">
-              <StatusDot status={node.status} />
-              <span className="font-mono text-slate-200 w-48 flex-shrink-0">{node.name}</span>
-              {node.duration_ms !== undefined && (
-                <span className="text-slate-500 text-xs font-mono w-20 flex-shrink-0">
-                  {node.duration_ms.toFixed(1)}ms
-                </span>
-              )}
-              {node.detail && (
-                <span className="text-slate-400 text-xs truncate">{node.detail}</span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   );
 };

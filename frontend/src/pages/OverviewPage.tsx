@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import type { HealthResponse, SecurityEvent, EventListResponse } from '../types/api';
+import type { HealthResponse, EventListResponse } from '../types/api';
 import { getHealth, getEvents } from '../services/api';
 import { StatusDot, DecisionBadge, ModeBadge, InfoCard } from '../components/ui/Badges';
 
@@ -31,112 +31,146 @@ export const OverviewPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Overview</h1>
-        <p className="text-slate-400 text-sm">AgentShield security pipeline status and recent activity.</p>
+        <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
+          Security Overview
+        </h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+          Real-time prompt injection detection, action policy status, and telemetry.
+        </p>
       </div>
 
       {backendDown && (
-        <div className="bg-cyber-red/10 border border-cyber-red/30 rounded-xl p-4 text-cyber-red">
-          <strong>Backend Unavailable</strong>
-          <p className="text-sm mt-1 text-cyber-red/80">
-            Could not reach the AgentShield API. Start the backend with: <code className="font-mono bg-navy-900 px-1 rounded">uvicorn app.main:app --reload</code>
+        <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-xs text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-300">
+          <div className="font-semibold mb-1">Backend Server Disconnected</div>
+          <p>
+            AgentShield API is unreachable at <code className="font-mono bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-rose-200 dark:border-rose-800">localhost:8000</code>.
+            Start the backend service with: <code className="font-mono bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-rose-200 dark:border-rose-800">uvicorn app.main:app --reload</code>.
           </p>
         </div>
       )}
 
-      {/* Stats Row */}
+      {/* Metrics Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <InfoCard label="Total Analyzed" value={total} sub="All time" />
-        <InfoCard label="Blocked" value={blocked} color="text-cyber-red" sub="From latest 10" />
-        <InfoCard label="Quarantined" value={quarantined} color="text-cyber-amber" sub="From latest 10" />
+        <InfoCard label="Total Requests" value={total} sub="Audited sessions" badge="Live" />
+        <InfoCard label="Blocked Attacks" value={blocked} sub="Latest 10 window" />
+        <InfoCard label="Quarantined" value={quarantined} sub="Held for review" />
         <InfoCard
           label="Execution Mode"
           value={health?.execution_mode ?? '—'}
-          color={health?.execution_mode === 'FULL' ? 'text-cyber-green' : 'text-cyber-amber'}
-          sub={health?.execution_mode === 'FULL' ? 'Groq + heuristics' : 'Local heuristics only'}
+          sub={health?.execution_mode === 'FULL' ? 'Groq LLM active' : 'Deterministic baseline'}
         />
       </div>
 
+      {/* Two Column Layout: System Health & Event Activity */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* System Health */}
+        {/* Component Health */}
         <div className="card">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-semibold text-white">System Health</h2>
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Pipeline Component Status
+            </h2>
             {health && <ModeBadge mode={health.execution_mode} />}
           </div>
+
           {loading ? (
-            <div className="text-slate-500 text-sm">Loading...</div>
+            <div className="text-xs text-slate-400 py-4">Checking components...</div>
           ) : health ? (
-            <div className="space-y-3">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
               {health.components.map(c => (
-                <div key={c.name} className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
+                <div key={c.name} className="py-2.5 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
                     <StatusDot status={c.available ? 'healthy' : 'error'} />
-                    <span className="text-sm text-slate-200 capitalize">{c.name.replace(/_/g, ' ')}</span>
+                    <span className="font-medium text-slate-800 dark:text-slate-200 capitalize">
+                      {c.name.replace(/_/g, ' ')}
+                    </span>
                   </div>
-                  <span className="text-xs text-slate-400 text-right max-w-40 truncate">{c.detail}</span>
+                  <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]">
+                    {c.detail}
+                  </span>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-slate-500 text-sm">Unavailable</div>
+            <div className="text-xs text-slate-400 py-4">No telemetry available</div>
           )}
         </div>
 
-        {/* Recent Events */}
+        {/* Recent Audit Log */}
         <div className="card">
-          <h2 className="font-semibold text-white mb-4">Recent Security Events</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Recent Security Events
+            </h2>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+              Audit log
+            </span>
+          </div>
+
           {events && events.events.length > 0 ? (
-            <div className="space-y-2">
-              {events.events.slice(0, 8).map(e => (
-                <div key={e.event_id} className="flex items-center gap-3 text-sm py-1.5 border-b border-navy-700 last:border-0">
-                  <DecisionBadge decision={e.policy_decision as 'ALLOW' | 'QUARANTINE' | 'BLOCK'} />
-                  <span className="text-slate-400 text-xs flex-shrink-0">{e.source_type.replace(/_/g, ' ')}</span>
-                  <span className="text-slate-500 text-xs font-mono flex-shrink-0">{e.risk_score.toFixed(0)}/100</span>
-                  <span className="text-slate-400 text-xs truncate">{new Date(e.timestamp).toLocaleTimeString()}</span>
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {events.events.slice(0, 7).map(e => (
+                <div key={e.event_id} className="py-2 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2.5">
+                    <DecisionBadge decision={e.policy_decision as 'ALLOW' | 'QUARANTINE' | 'BLOCK'} />
+                    <span className="font-mono text-[11px] text-slate-600 dark:text-slate-300">
+                      {e.source_type.replace(/_/g, ' ')}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                      Score: {e.risk_score.toFixed(0)}
+                    </span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">
+                      {new Date(e.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-slate-500 text-sm py-6 text-center">
-              No events yet. Run an analysis in the Security Playground.
+            <div className="text-xs text-slate-400 py-8 text-center">
+              No events recorded yet. Run tests in the Playground.
             </div>
           )}
         </div>
       </div>
 
-      {/* Architecture Overview */}
-      <div className="card-cyber">
-        <h2 className="font-semibold text-white mb-4">Security Pipeline</h2>
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          {[
-            { label: 'Untrusted Input', color: 'bg-slate-700' },
-            { label: '→', color: '' },
-            { label: 'Provenance & Normalize', color: 'bg-navy-700' },
-            { label: '→', color: '' },
-            { label: 'Fast Scanner', color: 'bg-cyber-blue/10 border border-cyber-blue/20' },
-            { label: '→', color: '' },
-            { label: 'Contextual Analysis', color: 'bg-purple-900/30 border border-purple-500/20' },
-            { label: '→', color: '' },
-            { label: 'Session Correlation', color: 'bg-navy-700' },
-            { label: '→', color: '' },
-            { label: ' Policy Gate', color: 'bg-cyber-red/10 border border-cyber-red/30 text-cyber-red font-bold' },
-            { label: '→', color: '' },
-            { label: 'Safe Response / Audit', color: 'bg-cyber-green/10 border border-cyber-green/20 text-cyber-green' },
-          ].map((item, i) =>
-            item.label === '→' ? (
-              <span key={i} className="text-slate-500">→</span>
-            ) : (
-              <span key={i} className={`px-3 py-1.5 rounded-lg text-xs font-medium ${item.color}`}>
-                {item.label}
-              </span>
-            )
-          )}
-        </div>
-        <p className="text-slate-500 text-xs mt-4">
-          
+      {/* Pipeline Interception Topology */}
+      <div className="card">
+        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
+          Architecture Interception Graph
+        </h2>
+        <p className="text-xs text-slate-600 dark:text-slate-400 mb-4 leading-relaxed">
+          AgentShield inserts an autonomous security boundary at runtime. External content is tagged by provenance and evaluated before reaching the model or triggering tool actions.
         </p>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {[
+            { step: '01', name: 'Ingest & Tag', role: 'Provenance Isolation' },
+            { step: '02', name: 'Fast Scanner', role: 'Rule Patterns (<5ms)' },
+            { step: '03', name: 'Contextual Judge', role: 'Groq LLM / Heuristic' },
+            { step: '04', name: 'Session Correlation', role: 'Multi-turn Drift' },
+            { step: '05', name: 'Policy Gate', role: 'Deterministic Decision' },
+            { step: '06', name: 'Tool Auth & Audit', role: 'Action Boundary' },
+          ].map((item, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded border border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-950/60 flex flex-col justify-between"
+            >
+              <div className="font-mono text-[10px] text-slate-400 dark:text-slate-500">
+                {item.step}
+              </div>
+              <div className="font-medium text-xs text-slate-800 dark:text-slate-200 mt-2">
+                {item.name}
+              </div>
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                {item.role}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
