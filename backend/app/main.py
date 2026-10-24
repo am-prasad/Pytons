@@ -64,8 +64,16 @@ def create_app() -> FastAPI:
         else:
             logger.info("LangSmith not configured — local trace only")
 
-        exec_mode = "FULL" if settings.groq_configured else "LOCAL_BASELINE"
-        logger.info("Execution mode: %s", exec_mode)
+        from app.services.groq_client import verify_groq_models
+        groq_ok, groq_msg = verify_groq_models()
+        if not settings.groq_configured:
+            exec_mode = "LOCAL_BASELINE"
+        elif groq_ok:
+            exec_mode = "FULL"
+        else:
+            exec_mode = "DEGRADED"
+
+        logger.info("Execution mode: %s (%s)", exec_mode, groq_msg)
         logger.info("AgentShield ready on %s:%s", settings.backend_host, settings.backend_port)
 
     @app.on_event("shutdown")

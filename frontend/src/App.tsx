@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { AgentDemoPage } from './pages/AgentDemoPage';
 import { OverviewPage } from './pages/OverviewPage';
 import { PlaygroundPage } from './pages/PlaygroundPage';
 import { ScenariosPage } from './pages/ScenariosPage';
@@ -6,7 +7,7 @@ import { TracesPage } from './pages/TracesPage';
 import { EvaluationPage } from './pages/EvaluationPage';
 import { HealthPage } from './pages/HealthPage';
 
-type Page = 'overview' | 'playground' | 'scenarios' | 'traces' | 'evaluation' | 'health';
+type Page = 'demo' | 'overview' | 'playground' | 'scenarios' | 'traces' | 'evaluation' | 'health';
 
 interface NavItem {
   id: Page;
@@ -16,16 +17,17 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'overview', code: '01', label: 'Overview', desc: 'System dashboard & metrics' },
-  { id: 'playground', code: '02', label: 'Playground', desc: 'Inspect prompts & payloads' },
-  { id: 'scenarios', code: '03', label: 'Scenarios', desc: 'Curated test cases' },
-  { id: 'traces', code: '04', label: 'Traces', desc: 'Audit log & execution nodes' },
-  { id: 'evaluation', code: '05', label: 'Evaluation', desc: 'Recall & precision lab' },
-  { id: 'health', code: '06', label: 'Health', desc: 'Pipeline components status' },
+  { id: 'demo', code: '01', label: 'Live Demo', desc: 'Document upload & dual agents' },
+  { id: 'overview', code: '02', label: 'Overview', desc: 'System dashboard & telemetry' },
+  { id: 'playground', code: '03', label: 'Playground', desc: 'Inspect prompts & payloads' },
+  { id: 'scenarios', code: '04', label: 'Scenarios', desc: 'Curated test cases' },
+  { id: 'traces', code: '05', label: 'Traces', desc: 'Audit log & execution nodes' },
+  { id: 'evaluation', code: '06', label: 'Evaluation', desc: 'Recall & precision lab' },
+  { id: 'health', code: '07', label: 'Health', desc: 'Pipeline components status' },
 ];
 
 function App() {
-  const [page, setPage] = useState<Page>('overview');
+  const [page, setPage] = useState<Page>('demo');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('agentshield-theme');
@@ -49,6 +51,7 @@ function App() {
 
   const renderPage = () => {
     switch (page) {
+      case 'demo': return <AgentDemoPage />;
       case 'overview': return <OverviewPage />;
       case 'playground': return <PlaygroundPage />;
       case 'scenarios': return <ScenariosPage />;
@@ -131,7 +134,7 @@ function App() {
           </button>
 
           <div className="px-1 text-[11px] text-slate-400 dark:text-slate-500 leading-tight">
-            Team Pytons
+            Team Pytons · Hackathon MVP
           </div>
         </div>
       </aside>

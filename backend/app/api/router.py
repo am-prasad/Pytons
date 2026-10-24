@@ -1,11 +1,12 @@
 """AgentShield API Router — Mounts all v1 routes."""
 from fastapi import APIRouter
 
-from app.api.routes import analyze, health, sessions, tools, events, evaluation
+from app.api.routes import analyze, documents, evaluation, events, health, sessions, tools
 
 router = APIRouter(prefix="/api/v1")
 
 router.include_router(health.router, tags=["Health"])
+router.include_router(documents.router, tags=["Documents & Agents"])
 router.include_router(analyze.router, tags=["Analysis"])
 router.include_router(sessions.router, tags=["Sessions"])
 router.include_router(tools.router, tags=["Tools"])

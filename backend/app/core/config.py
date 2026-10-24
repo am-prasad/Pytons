@@ -33,7 +33,6 @@ except ImportError:
                         pass
 
                 env_vals = {}
-                # Handle pydantic v2 model_fields or v1 __fields__
                 fields = getattr(self, "model_fields", None) or getattr(self, "__fields__", {})
                 for field_name, field_info in fields.items():
                     alias = getattr(field_info, "alias", None) or field_name.upper()
@@ -42,6 +41,8 @@ except ImportError:
                         ann = getattr(field_info, "annotation", None)
                         if ann is int:
                             raw = int(raw)
+                        elif ann is float:
+                            raw = float(raw)
                         elif ann is bool:
                             raw = str(raw).lower() in ("true", "1", "yes", "t")
                         env_vals[field_name] = raw
@@ -60,9 +61,10 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
 
-    # ── Groq LLM ─────────────────────────────────────────────────────────────
+    # ── Groq LLM (Judge & Agent) ─────────────────────────────────────────────
     groq_api_key: str = Field(default="", alias="GROQ_API_KEY")
     groq_model: str = Field(default="llama-3.1-8b-instant", alias="GROQ_MODEL")
+    agent_model: str = Field(default="llama-3.3-70b-versatile", alias="AGENT_MODEL")
 
     # ── LangSmith ────────────────────────────────────────────────────────────
     langsmith_tracing: bool = Field(default=False, alias="LANGSMITH_TRACING")
@@ -72,30 +74,55 @@ class Settings(BaseSettings):
         default="https://api.smith.langchain.com", alias="LANGSMITH_ENDPOINT"
     )
 
-    # ── Storage ──────────────────────────────────────────────────────────────
+    # ── Storage & Paths ──────────────────────────────────────────────────────
     chroma_persist_directory: str = Field(
         default="./data/chroma", alias="CHROMA_PERSIST_DIRECTORY"
     )
     database_url: str = Field(
         default="sqlite+aiosqlite:///./data/agentshield.db", alias="DATABASE_URL"
     )
+    persist_document_text: bool = Field(default=False, alias="PERSIST_DOCUMENT_TEXT")
 
-    # ── Security ─────────────────────────────────────────────────────────────
+    # ── Document Upload & Extraction Limits ──────────────────────────────────
+    max_upload_bytes: int = Field(default=5242880, alias="MAX_UPLOAD_BYTES")  # 5 MB
+    max_pdf_pages: int = Field(default=20, alias="MAX_PDF_PAGES")
+    max_llm_calls_per_doc: int = Field(default=6, alias="MAX_LLM_CALLS_PER_DOC")
+    max_llm_input_chars: int = Field(default=4000, alias="MAX_LLM_INPUT_CHARS")
+
+    # ── Security & Policy Gate ───────────────────────────────────────────────
     max_input_length: int = Field(default=8000, alias="MAX_INPUT_LENGTH")
     request_timeout_seconds: int = Field(default=30, alias="REQUEST_TIMEOUT_SECONDS")
+    outbound_allowed_domains: str = Field(
+        default="internal.corp,company.com,partner.org,acme.com",
+        alias="OUTBOUND_ALLOWED_DOMAINS",
+    )
 
-    # ── Derived ───────────────────────────────────────────────────────────────
+    # ── Risk Thresholds ──────────────────────────────────────────────────────
+    risk_threshold_block: float = Field(default=70.0, alias="RISK_THRESHOLD_BLOCK")
+    risk_threshold_quarantine: float = Field(default=35.0, alias="RISK_THRESHOLD_QUARANTINE")
+    scanner_suspicious_threshold: float = Field(default=20.0, alias="SCANNER_SUSPICIOUS_THRESHOLD")
+
+    # ── Alerting & Webhooks ──────────────────────────────────────────────────
+    slack_webhook_url: str = Field(default="", alias="SLACK_WEBHOOK_URL")
+    alert_webhook_url: str = Field(default="", alias="ALERT_WEBHOOK_URL")
+    alert_webhook_secret: str = Field(default="", alias="ALERT_WEBHOOK_SECRET")
+
+    # ── Derived helpers ───────────────────────────────────────────────────────
     @property
     def allowed_origins_list(self) -> List[str]:
         return [o.strip() for o in self.allowed_origins.split(",") if o.strip()]
 
     @property
+    def outbound_allowed_domains_list(self) -> List[str]:
+        return [d.strip().lower() for d in self.outbound_allowed_domains.split(",") if d.strip()]
+
+    @property
     def groq_configured(self) -> bool:
-        return bool(self.groq_api_key)
+        return bool(self.groq_api_key.strip())
 
     @property
     def langsmith_configured(self) -> bool:
-        return bool(self.langsmith_api_key) and self.langsmith_tracing
+        return bool(self.langsmith_api_key.strip()) and self.langsmith_tracing
 
     class Config:
         env_file = ".env"

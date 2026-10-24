@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 from app.schemas.models import EvaluationResult, EvaluationRunRequest
-from app.evaluation.runner import run_evaluation
+from app.evaluation.runner import run_evaluation, run_multi_config_evaluation
 from app.storage.database import get_latest_evaluation
 
 import logging
@@ -39,6 +39,30 @@ async def run_eval(body: EvaluationRunRequest) -> EvaluationResult:
         _running = False
 
 
+@router.post("/evaluate/multi-config")
+async def run_multi_eval(body: EvaluationRunRequest):
+    """
+    Run evaluation across (a) baseline, (b) baseline+judge, (c) full pipeline
+    and return the consolidated report with gate enforcement checks.
+    """
+    global _running
+    if _running:
+        raise HTTPException(status_code=429, detail="Evaluation already running. Please wait.")
+
+    _running = True
+    try:
+        report = await run_multi_config_evaluation(
+            dataset_path=body.dataset_path,
+            max_examples=body.max_examples,
+        )
+        return report
+    except Exception as exc:
+        logger.error("Multi-config evaluation failed: %s", exc)
+        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(exc)[:200]}")
+    finally:
+        _running = False
+
+
 @router.get("/evaluate/results", response_model=EvaluationResult)
 async def get_latest_results() -> EvaluationResult:
     """Returns the latest completed evaluation result."""
@@ -49,3 +73,4 @@ async def get_latest_results() -> EvaluationResult:
             detail="No evaluation results found. Run POST /api/v1/evaluate first.",
         )
     return result
+

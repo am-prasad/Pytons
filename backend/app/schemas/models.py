@@ -1,12 +1,12 @@
 """
 AgentShield Pydantic Schemas
-All API request/response models with strict validation.
+Strictly validated request/response models for all AgentShield endpoints.
 """
 from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -32,6 +32,7 @@ class PolicyDecision(str, Enum):
     ALLOW = "ALLOW"
     QUARANTINE = "QUARANTINE"
     BLOCK = "BLOCK"
+    REQUIRE_APPROVAL = "REQUIRE_APPROVAL"
 
 
 class AttackType(str, Enum):
@@ -56,6 +57,7 @@ class NodeStatus(str, Enum):
     RAN = "ran"
     SKIPPED = "skipped"
     ERROR = "error"
+    FALLBACK = "fallback"
 
 
 # ─── Shared building blocks ────────────────────────────────────────────────────
@@ -63,7 +65,9 @@ class NodeStatus(str, Enum):
 class EvidenceSnippet(BaseModel):
     text: str
     indicator: str
-    layer: str  # e.g. "scanner", "contextual", "session"
+    layer: str  # e.g. "scanner", "contextual", "session", "document"
+    chunk_index: Optional[int] = None
+    page: Optional[int] = None
 
 
 class WorkflowNode(BaseModel):
@@ -82,7 +86,7 @@ class TraceEvent(BaseModel):
     detail: Optional[str] = None
 
 
-# ─── Analysis request / response ──────────────────────────────────────────────
+# ─── Analysis Request / Response ──────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
     text: str = Field(..., min_length=1, max_length=8000)
@@ -108,15 +112,19 @@ class ContextualFindings(BaseModel):
     evidence: List[EvidenceSnippet] = []
     recommended_action: PolicyDecision = PolicyDecision.ALLOW
     provider: str = "none"  # "groq", "local_heuristic", "none"
+    model_id: Optional[str] = None
     note: Optional[str] = None
+    cached: bool = False
 
 
 class SessionCorrelation(BaseModel):
     session_id: Optional[str] = None
     prior_risk_events: int = 0
+    probing_count: int = 0
     escalation_detected: bool = False
     session_risk_boost: float = 0.0
     contributing_events: List[str] = []
+    crescendo_reason: Optional[str] = None
 
 
 class PolicyResult(BaseModel):
@@ -141,7 +149,7 @@ class AnalyzeResponse(BaseModel):
     request_id: str
     timestamp: datetime
     source_type: SourceType
-    session_id: Optional[str]
+    session_id: Optional[str] = None
     risk_score: float
     risk_category: RiskCategory
     policy_decision: PolicyDecision
@@ -157,23 +165,123 @@ class AnalyzeResponse(BaseModel):
     latency_ms: float
     execution_mode: ExecutionMode
     langsmith_trace_id: Optional[str] = None
+    langsmith_trace_url: Optional[str] = None
 
 
-# ─── Session ──────────────────────────────────────────────────────────────────
+# ─── Document Upload & Inspection Models ───────────────────────────────────────
 
-class SessionResetRequest(BaseModel):
-    session_id: str = Field(..., min_length=1, max_length=64)
+class DocumentChunk(BaseModel):
+    page: int
+    chunk_index: int
+    char_start: int
+    char_end: int
+    text_preview: str
+    obfuscation_flags: List[str] = []
+    scanner_score: float = 0.0
+    scanner_patterns: List[str] = []
+    sent_to_llm: bool = False
+    decision: PolicyDecision = PolicyDecision.ALLOW
+    judge_finding: Optional[ContextualFindings] = None
 
 
-class SessionResetResponse(BaseModel):
-    session_id: str
-    cleared: bool
-    message: str
+class DocumentMetadata(BaseModel):
+    filename: str
+    file_type: str  # "pdf" or "txt"
+    file_size_bytes: int
+    pages: int
+    extracted_chars: int
+    chunks_total: int
+    chunks_scanned: int
+    chunks_sent_to_llm: int
+    llm_review_status: str  # "complete", "partial", "skipped", "failed"
+    limitation_note: Optional[str] = None
+    suspicious_regions: List[str] = []
 
 
-# ─── Tool simulation ──────────────────────────────────────────────────────────
+class AgentExecutionResult(BaseModel):
+    mode: str  # "protected" | "unprotected"
+    model: str
+    answer: str
+    proposed_actions: List[Dict[str, Any]] = []
+    authorizations: List[Dict[str, Any]] = []
+    executed_actions: List[Dict[str, Any]] = []
+    denied_actions: List[Dict[str, Any]] = []
+    notices: List[str] = []
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
 
-ALLOWED_TOOL_NAMES = {"get_public_status", "search_demo_documents", "request_sensitive_export"}
+
+class DocumentAnalyzeResponse(BaseModel):
+    request_id: str
+    timestamp: datetime
+    doc_meta: DocumentMetadata
+    task: str
+    risk_score: float
+    risk_category: RiskCategory
+    policy_decision: PolicyDecision
+    attack_types: List[AttackType]
+    evidence: List[EvidenceSnippet]
+    chunks: List[DocumentChunk]
+    unprotected_agent: AgentExecutionResult
+    protected_agent: AgentExecutionResult
+    workflow_nodes: List[WorkflowNode]
+    trace_events: List[TraceEvent]
+    alerts: List[Dict[str, Any]] = []
+    latency_ms: float
+    execution_mode: ExecutionMode
+    judge_model: str
+    agent_model: str
+    langsmith_trace_id: Optional[str] = None
+    langsmith_trace_url: Optional[str] = None
+    json_report: Dict[str, Any] = {}
+
+
+# ─── Alerting & Approvals ──────────────────────────────────────────────────────
+
+class AlertEvent(BaseModel):
+    alert_id: str
+    timestamp: datetime
+    severity: RiskCategory
+    checkpoint: str
+    source_ref: str
+    evidence: List[str] = []
+    blocked_action: Optional[str] = None
+    recommendation: str
+    user_notice: str
+    status: str = "delivered"  # "delivered", "pending", "approved", "rejected"
+
+
+class ApprovalRequest(BaseModel):
+    approval_id: str
+    timestamp: datetime
+    tool_name: str
+    parameters: Dict[str, Any] = {}
+    session_id: Optional[str] = None
+    risk_score: float = 0.0
+    reason: str = ""
+    status: str = "PENDING"  # "PENDING", "APPROVED", "REJECTED"
+
+
+class ApprovalDecision(BaseModel):
+    approval_id: str
+    decision: str  # "APPROVE" or "REJECT"
+    reviewer: Optional[str] = "admin"
+
+
+class ApprovalListResponse(BaseModel):
+    approvals: List[ApprovalRequest]
+    total: int
+
+
+# ─── Tool Simulation ──────────────────────────────────────────────────────────
+
+ALLOWED_TOOL_NAMES = {
+    "get_public_status",
+    "search_demo_documents",
+    "read_inbox",
+    "send_email",
+    "request_sensitive_export",
+}
 
 
 class ToolSimulateRequest(BaseModel):
@@ -199,12 +307,24 @@ class ToolSimulateResponse(BaseModel):
     latency_ms: float
 
 
-# ─── Events ───────────────────────────────────────────────────────────────────
+# ─── Session ──────────────────────────────────────────────────────────────────
+
+class SessionResetRequest(BaseModel):
+    session_id: str = Field(..., min_length=1, max_length=64)
+
+
+class SessionResetResponse(BaseModel):
+    session_id: str
+    cleared: bool
+    message: str
+
+
+# ─── Security Events ──────────────────────────────────────────────────────────
 
 class SecurityEvent(BaseModel):
     event_id: str
     request_id: str
-    session_id: Optional[str]
+    session_id: Optional[str] = None
     timestamp: datetime
     source_type: str
     risk_score: float
@@ -226,8 +346,8 @@ class EventListResponse(BaseModel):
 # ─── Evaluation ───────────────────────────────────────────────────────────────
 
 class EvaluationRunRequest(BaseModel):
-    dataset_path: Optional[str] = None  # defaults to bundled dataset
-    max_examples: Optional[int] = Field(default=None, ge=1, le=200)
+    dataset_path: Optional[str] = None
+    max_examples: Optional[int] = Field(default=None, ge=1, le=500)
 
 
 class CategoryMetrics(BaseModel):
@@ -247,11 +367,14 @@ class EvaluationResult(BaseModel):
     precision: float
     false_positive_rate: float
     block_rate_on_dangerous: float
-    median_latency_ms: Optional[float]
+    median_latency_ms: Optional[float] = None
+    p95_latency_ms: Optional[float] = None
+    config_name: Optional[str] = "full_pipeline"
     category_metrics: List[CategoryMetrics]
     confusion_matrix: Dict[str, Dict[str, int]]
     execution_mode: ExecutionMode
     notes: str
+
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
@@ -267,3 +390,7 @@ class HealthResponse(BaseModel):
     execution_mode: ExecutionMode
     components: List[ComponentStatus]
     timestamp: datetime
+    judge_model: Optional[str] = None
+    agent_model: Optional[str] = None
+    last_call_status: Optional[str] = None
+    last_error_class: Optional[str] = None

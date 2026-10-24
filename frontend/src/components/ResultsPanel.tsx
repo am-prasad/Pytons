@@ -187,7 +187,7 @@ export const ResultsPanel: React.FC<ResultsPanelProps> = ({ result }) => {
                   )}
                 </div>
                 <span className="font-mono text-slate-500 dark:text-slate-400 text-[11px]">
-                  {node.duration_ms.toFixed(1)} ms
+                  {node.duration_ms != null ? `${node.duration_ms.toFixed(1)} ms` : '—'}
                 </span>
               </div>
             ))}
