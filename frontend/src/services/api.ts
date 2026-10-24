@@ -41,9 +41,7 @@ export const analyzeDocument = (
   }
 
   return api
-    .post<DocumentAnalyzeResponse>('/documents/analyze', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
+    .post<DocumentAnalyzeResponse>('/documents/analyze', formData)
     .then(r => r.data);
 };
 
@@ -83,9 +81,26 @@ export const getApprovals = (): Promise<ApprovalListResponse> =>
 
 export const resolveApproval = (
   approval_id: string,
-  decision: 'APPROVE' | 'REJECT'
+  decision: 'APPROVE' | 'REJECT',
+  edited_parameters?: Record<string, unknown>,
+  thread_id?: string,
 ): Promise<any> =>
-  api.post('/approvals/resolve', { approval_id, decision }).then(r => r.data);
+  api.post('/approvals/resolve', { approval_id, decision, edited_parameters, thread_id }).then(r => r.data);
+
+export const runHitlGraph = (body: {
+  prompt: string;
+  thread_id?: string;
+  authenticated_user?: string;
+}): Promise<any> =>
+  api.post('/tools/graph/run', body).then(r => r.data);
+
+export const resumeHitlGraph = (body: {
+  thread_id: string;
+  decision: 'APPROVE' | 'REJECT';
+  edited_parameters?: Record<string, unknown>;
+  reviewer_notes?: string;
+}): Promise<any> =>
+  api.post('/tools/graph/resume', body).then(r => r.data);
 
 // ─── Evaluation Lab ───────────────────────────────────────────────────────────
 

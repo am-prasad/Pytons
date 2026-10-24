@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.core.config import get_settings
 from app.schemas.models import ComponentStatus, ExecutionMode, HealthResponse
 from app.services.groq_client import get_telemetry, verify_groq_models
+from app.services.langsmith_client import verify_langsmith_connection
 
 router = APIRouter()
 
@@ -51,11 +52,12 @@ async def health() -> HealthResponse:
     )
 
     # 4. LangSmith Tracing
+    ls_ok, ls_detail = verify_langsmith_connection()
     components.append(
         ComponentStatus(
             name="langsmith",
-            available=settings.langsmith_configured,
-            detail=f"Project: {settings.langsmith_project}" if settings.langsmith_configured else "Not configured (local trace only)",
+            available=ls_ok,
+            detail=ls_detail,
         )
     )
 

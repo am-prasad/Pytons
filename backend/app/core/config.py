@@ -122,7 +122,7 @@ class Settings(BaseSettings):
 
     @property
     def clean_langsmith_project(self) -> str:
-        return self.langsmith_project.strip(' "\'') or "Pythons"
+        return self.langsmith_project.strip(' "\'') or "pythons"
 
     @property
     def langsmith_configured(self) -> bool:

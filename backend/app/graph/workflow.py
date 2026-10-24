@@ -36,10 +36,12 @@ from app.schemas.models import (
     SessionCorrelation,
     SourceType,
     TraceEvent,
+    TrackedContent,
     WorkflowNode,
 )
 from app.services import scanner as scanner_svc
 from app.services import contextual_analyzer as ctx_svc
+from app.services.content_tracker import track_and_scan_content
 from app.services.session_store import get_store
 from app.policy import gate as policy_gate
 
@@ -65,6 +67,7 @@ class GraphState(BaseModel):
     contextual_findings: Optional[ContextualFindings] = None
     session_correlation: Optional[SessionCorrelation] = None
     policy_result: Optional[PolicyResult] = None
+    tracked_content: Optional[TrackedContent] = None
 
     # Audit trail
     workflow_nodes: List[WorkflowNode] = []
@@ -126,6 +129,13 @@ def ingest_input(state: GraphState) -> GraphState:
 def scan_input(state: GraphState) -> GraphState:
     t0 = time.monotonic()
     try:
+        # Phase 2: Attach source metadata and perform deterministic screening
+        tracked = track_and_scan_content(
+            raw_content=state.normalized_text,
+            source_type=state.source_type,
+            source_ref=f"request:{state.request_id[:8]}",
+        )
+        state.tracked_content = tracked
         findings = scanner_svc.scan(state.normalized_text)
         state.scanner_findings = findings
         _record_node(state, "scan_input", NodeStatus.RAN, t0,

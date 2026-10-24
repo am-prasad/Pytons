@@ -14,6 +14,8 @@ import {
   getSandboxOutbox,
   resetSession,
   resolveApproval,
+  runHitlGraph,
+  resumeHitlGraph,
 } from '../services/api';
 import {
   DecisionBadge,
@@ -51,6 +53,11 @@ export const AgentDemoPage: React.FC = () => {
     Array<{ turn: number; prompt: string; decision: string; risk: number; reason: string }>
   >([]);
   const [chatLoading, setChatLoading] = useState(false);
+
+  // ── LangGraph HITL State (Phase 3) ──────────────────────────────────────────
+  const [hitlPrompt, setHitlPrompt] = useState('Send quarterly financials report to audit-team@company.com');
+  const [hitlLoading, setHitlLoading] = useState(false);
+  const [hitlResult, setHitlResult] = useState<any>(null);
 
   const refreshHealth = async () => {
     try {
@@ -114,13 +121,39 @@ export const AgentDemoPage: React.FC = () => {
     }
   };
 
-  // ── Human Approval Resolver ────────────────────────────────────────────────
-  const handleApproval = async (approvalId: string, decision: 'APPROVE' | 'REJECT') => {
+  // ── Human Approval Resolver (Phase 3 LangGraph Resume) ─────────────────────
+  const handleApproval = async (approvalId: string, decision: 'APPROVE' | 'REJECT', threadId?: string) => {
     try {
-      await resolveApproval(approvalId, decision);
+      const res = await resolveApproval(approvalId, decision, undefined, threadId);
+      if (res?.graph_state) {
+        setHitlResult(res.graph_state);
+      } else if (threadId && hitlResult?.thread_id === threadId) {
+        setHitlResult((prev: any) => ({
+          ...prev,
+          status: decision === 'APPROVE' ? 'RESUMED_APPROVED' : 'REJECTED',
+          approval_status: decision,
+        }));
+      }
       await refreshAuxiliary();
     } catch (err: any) {
       setError(`Approval action failed: ${err.message}`);
+    }
+  };
+
+  // ── LangGraph HITL Runner ───────────────────────────────────────────────────
+  const handleRunHitl = async (customPrompt?: string) => {
+    const textToRun = customPrompt || hitlPrompt;
+    if (!textToRun.trim()) return;
+    setHitlLoading(true);
+    setError(null);
+    try {
+      const res = await runHitlGraph({ prompt: textToRun });
+      setHitlResult(res);
+      await refreshAuxiliary();
+    } catch (err: any) {
+      setError(`LangGraph execution error: ${err.message}`);
+    } finally {
+      setHitlLoading(false);
     }
   };
 
@@ -327,7 +360,7 @@ export const AgentDemoPage: React.FC = () => {
             </label>
             <input
               type="file"
-              accept=".pdf,.txt"
+              accept=".pdf,.txt,.docx,.doc,.rtf"
               onChange={e => {
                 const f = e.target.files?.[0];
                 if (f) {
@@ -772,6 +805,144 @@ export const AgentDemoPage: React.FC = () => {
         )}
       </div>
 
+      {/* ── LangGraph Human-in-the-Loop (HITL) Action Sandbox (Phase 1, 2, 3) ──── */}
+      <div className="card space-y-4 border border-indigo-200 dark:border-indigo-950 bg-gradient-to-br from-indigo-50/20 via-slate-50 to-emerald-50/20 dark:from-indigo-950/20 dark:via-slate-900/50 dark:to-emerald-950/20">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                LangGraph Human-in-the-Loop (HITL) Action Sandbox
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Demonstrates Phase 1 tool authorization, Phase 2 content tainting, and Phase 3 LangGraph pause-and-resume checkpointer.
+            </p>
+          </div>
+          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-900">
+            LANGGRAPH MEMORYSAVER ACTIVE
+          </span>
+        </div>
+
+        {/* Quick Test Scenarios */}
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+            Quick Scenarios (Trigger HITL Pause or Screening):
+          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <button
+              onClick={() => handleRunHitl('Send quarterly financial summary to audit-team@company.com')}
+              disabled={hitlLoading}
+              className="p-2 text-left rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs transition-colors"
+            >
+              <div className="font-semibold text-slate-800 dark:text-slate-200">📤 External Egress</div>
+              <div className="text-[11px] text-slate-500 truncate">send_email (HITL pause)</div>
+            </button>
+
+            <button
+              onClick={() => handleRunHitl('Update customer #8821 tier to VIP in database')}
+              disabled={hitlLoading}
+              className="p-2 text-left rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs transition-colors"
+            >
+              <div className="font-semibold text-slate-800 dark:text-slate-200">✏️ Record Mutation</div>
+              <div className="text-[11px] text-slate-500 truncate">update_record (HITL pause)</div>
+            </button>
+
+            <button
+              onClick={() => handleRunHitl('Delete obsolete archive file /var/data/archive_2025.tar.gz')}
+              disabled={hitlLoading}
+              className="p-2 text-left rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs transition-colors"
+            >
+              <div className="font-semibold text-slate-800 dark:text-slate-200">🗑️ File Deletion</div>
+              <div className="text-[11px] text-slate-500 truncate">delete_file (HITL pause)</div>
+            </button>
+
+            <button
+              onClick={() => handleRunHitl('Check and read supplier messages in inbox')}
+              disabled={hitlLoading}
+              className="p-2 text-left rounded border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs transition-colors"
+            >
+              <div className="font-semibold text-slate-800 dark:text-slate-200">📥 Untrusted Output</div>
+              <div className="text-[11px] text-slate-500 truncate">read_inbox (Phase 2 screen)</div>
+            </button>
+          </div>
+        </div>
+
+        {/* Custom Input */}
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={hitlPrompt}
+            onChange={e => setHitlPrompt(e.target.value)}
+            placeholder="Enter agent instruction (e.g. Send export to admin@company.com)..."
+            className="input text-xs flex-1"
+            disabled={hitlLoading}
+          />
+          <button
+            onClick={() => handleRunHitl()}
+            disabled={hitlLoading}
+            className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs transition-colors flex items-center gap-2 flex-shrink-0"
+          >
+            {hitlLoading && <Spinner className="w-3.5 h-3.5" />}
+            <span>Execute via LangGraph</span>
+          </button>
+        </div>
+
+        {/* HITL Execution Snapshot */}
+        {hitlResult && (
+          <div className="p-3 rounded border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-slate-950 space-y-2 text-xs font-mono">
+            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-2">
+              <span className="font-bold text-slate-800 dark:text-slate-200">
+                LangGraph Thread #{hitlResult.thread_id?.substring(0, 12)}
+              </span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                hitlResult.status === 'PAUSED_WAITING_APPROVAL'
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300'
+                  : hitlResult.status === 'RESUMED_APPROVED' || hitlResult.status === 'COMPLETED'
+                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300'
+                  : 'bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300'
+              }`}>
+                STATUS: {hitlResult.status}
+              </span>
+            </div>
+
+            {hitlResult.status === 'PAUSED_WAITING_APPROVAL' && hitlResult.pending_approval && (
+              <div className="p-2.5 rounded bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 space-y-2">
+                <div className="text-amber-900 dark:text-amber-200 font-bold">
+                  ⏸️ Graph Paused at Checkpoint: {hitlResult.pending_approval.tool_name}
+                </div>
+                <div className="text-[11px] text-amber-800 dark:text-amber-300">
+                  {hitlResult.pending_approval.reason}
+                </div>
+                <div className="text-[11px] text-slate-600 dark:text-slate-400">
+                  Proposed Arguments: {JSON.stringify(hitlResult.pending_approval.parameters)}
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => handleApproval(hitlResult.pending_approval.approval_id, 'APPROVE', hitlResult.thread_id)}
+                    className="px-3 py-1 rounded bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 shadow-sm"
+                  >
+                    Authorize & Resume Graph
+                  </button>
+                  <button
+                    onClick={() => handleApproval(hitlResult.pending_approval.approval_id, 'REJECT', hitlResult.thread_id)}
+                    className="px-3 py-1 rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    Reject & Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {hitlResult.final_output && (
+              <div className="text-slate-700 dark:text-slate-300 whitespace-pre-wrap pt-1">
+                {hitlResult.final_output}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* ── Sandbox Outbox & Human Approvals Row ─────────────────────────────── */}
       <div className="grid md:grid-cols-2 gap-6">
         {/* Approvals Panel */}
@@ -791,19 +962,19 @@ export const AgentDemoPage: React.FC = () => {
                   className="p-3 rounded bg-amber-50/60 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-xs space-y-2"
                 >
                   <div className="flex justify-between font-mono font-medium">
-                    <span className="text-amber-900 dark:text-amber-200">{appr.tool_name}</span>
+                    <span className="text-amber-900 dark:text-amber-200 font-bold">{appr.tool_name}</span>
                     <span className="text-amber-700 dark:text-amber-400">Score: {appr.risk_score.toFixed(0)}</span>
                   </div>
                   <div className="text-slate-600 dark:text-slate-400 text-[11px]">{appr.reason}</div>
                   <div className="flex gap-2 pt-1">
                     <button
-                      onClick={() => handleApproval(appr.approval_id, 'APPROVE')}
+                      onClick={() => handleApproval(appr.approval_id, 'APPROVE', appr.thread_id)}
                       className="px-2.5 py-1 rounded bg-emerald-600 text-white text-[11px] font-medium hover:bg-emerald-700"
                     >
                       Authorize Action
                     </button>
                     <button
-                      onClick={() => handleApproval(appr.approval_id, 'REJECT')}
+                      onClick={() => handleApproval(appr.approval_id, 'REJECT', appr.thread_id)}
                       className="px-2.5 py-1 rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-[11px] font-medium hover:bg-slate-100 dark:hover:bg-slate-800"
                     >
                       Deny

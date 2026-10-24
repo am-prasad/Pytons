@@ -145,7 +145,29 @@ def request_sensitive_export(parameters: Dict[str, Any] = {}) -> Dict[str, Any]:
     }
 
 
-# ─── Registry & Dispatcher ───────────────────────────────────────────────────
+def update_record(parameters: Dict[str, Any] = {}) -> Dict[str, Any]:
+    record_id = str(parameters.get("record_id", "rec-001"))
+    updates = parameters.get("updates", {})
+    return {
+        "tool": "update_record",
+        "record_id": record_id,
+        "status": "record_updated_in_sandbox",
+        "updates_applied": updates,
+        "note": "SIMULATED: Database record mutation executed in sandbox.",
+    }
+
+
+def delete_file(parameters: Dict[str, Any] = {}) -> Dict[str, Any]:
+    file_path = str(parameters.get("file_path", "unspecified_file.dat"))
+    return {
+        "tool": "delete_file",
+        "file_path": file_path,
+        "status": "file_deleted_in_sandbox",
+        "note": "SIMULATED: File deletion executed in dummy storage sandbox.",
+    }
+
+
+# ─── Registry & Centralized Enforcement Point ────────────────────────────────
 
 _TOOL_REGISTRY = {
     "get_public_status": get_public_status,
@@ -153,14 +175,79 @@ _TOOL_REGISTRY = {
     "read_inbox": read_inbox,
     "send_email": send_email,
     "request_sensitive_export": request_sensitive_export,
+    "update_record": update_record,
+    "delete_file": delete_file,
 }
 
 
-def execute_tool(tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+def execute_tool(
+    tool_name: str,
+    parameters: Dict[str, Any],
+    authenticated_user: str = "default_user",
+    source_context: Optional[str] = None,
+    session_risk: float = 0.0,
+    policy: Any = None,
+    source_type: Any = None,
+    bypass_auth: bool = False,
+) -> Dict[str, Any]:
+    """
+    Executes a tool with Phase 1 centralized policy authorization
+    and Phase 2 post-execution output screening.
+    """
+    from app.policy.gate import authorize_tool_call
+    from app.schemas.models import PolicyDecision
+    from app.services.content_tracker import scan_tool_response
+
+    # Phase 1: Shared authorization check
+    if not bypass_auth:
+        decision, reason = authorize_tool_call(
+            tool_name=tool_name,
+            arguments=parameters,
+            authenticated_user=authenticated_user,
+            source_context=source_context,
+            session_risk=session_risk,
+            policy=policy,
+            source_type=source_type,
+        )
+
+        if decision == PolicyDecision.BLOCK:
+            return {
+                "tool": tool_name,
+                "status": "denied",
+                "executed": False,
+                "reason": reason,
+                "action_prevented": True,
+            }
+        elif decision == PolicyDecision.REQUIRE_APPROVAL:
+            return {
+                "tool": tool_name,
+                "status": "paused_requires_human_approval",
+                "executed": False,
+                "reason": reason,
+                "requires_approval": True,
+            }
+
     fn = _TOOL_REGISTRY.get(tool_name)
     if fn is None:
-        raise ValueError(f"Tool '{tool_name}' not permitted by allowlist.")
-    return fn(parameters)
+        return {
+            "tool": tool_name,
+            "status": "denied",
+            "executed": False,
+            "reason": f"Tool '{tool_name}' not permitted by allowlist.",
+        }
+
+    raw_result = fn(parameters)
+
+    # Phase 2: Track untrusted content & screen newly retrieved tool output
+    sanitized_result, tracked = scan_tool_response(tool_name, raw_result)
+    sanitized_result["_tracked_content_id"] = tracked.content_id
+    sanitized_result["_is_untrusted"] = tracked.is_untrusted
+    sanitized_result["_scanned"] = tracked.scanned
+    if tracked.quarantined:
+        sanitized_result["_quarantined"] = True
+        sanitized_result["_quarantine_reason"] = tracked.quarantine_reason
+
+    return sanitized_result
 
 
 def get_sandbox_outbox() -> List[Dict[str, Any]]:

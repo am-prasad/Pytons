@@ -154,9 +154,26 @@ def get_pending_approvals() -> List[ApprovalRequest]:
     return [req for req in _PENDING_APPROVALS.values() if req.status == "PENDING"]
 
 
-def resolve_approval(approval_id: str, decision: str) -> Optional[ApprovalRequest]:
+def resolve_approval(
+    approval_id: str,
+    decision: str,
+    edited_parameters: Optional[Dict[str, Any]] = None,
+    reviewer: str = "admin",
+) -> Optional[ApprovalRequest]:
     req = _PENDING_APPROVALS.get(approval_id)
     if not req:
         return None
-    req.status = "APPROVED" if decision.upper() == "APPROVE" else "REJECTED"
+    is_approved = decision.upper() == "APPROVE"
+    req.status = "APPROVED" if is_approved else "REJECTED"
+
+    # If approved, execute the action in the sandbox with approved or edited parameters
+    if is_approved:
+        from app.services.tools import execute_tool
+        exec_params = edited_parameters if edited_parameters is not None else req.parameters
+        try:
+            execute_tool(req.tool_name, exec_params, bypass_auth=True)
+            logger.info("Human approved tool '%s' executed in sandbox", req.tool_name)
+        except Exception as exc:
+            logger.warning("Failed executing approved tool '%s': %s", req.tool_name, exc)
+
     return req

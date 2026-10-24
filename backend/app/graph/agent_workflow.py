@@ -377,12 +377,15 @@ async def execute_document_security_pipeline(
         t_name = tool_call.get("name", "")
         t_params = tool_call.get("parameters", {})
 
-        # Deterministic Policy Gate & Egress Check
-        auth_decision, auth_reason = policy_gate.authorize_tool_action(
+        # Phase 1: Shared authorize_tool_call enforcement point
+        auth_decision, auth_reason = policy_gate.authorize_tool_call(
             tool_name=t_name,
-            parameters=t_params,
+            arguments=t_params,
+            authenticated_user="autonomous_agent",
+            source_context=task,
+            session_risk=state.overall_risk_score,
             policy=policy_result,
-            user_task=task,
+            source_type=SourceType.RETRIEVED_DOCUMENT,
         )
 
         prot_auths.append({

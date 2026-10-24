@@ -160,7 +160,96 @@ def decide(
     )
 
 
-# ─── Tool Authorization & Egress Rule ──────────────────────────────────────────
+# ─── Shared Tool Authorization & Egress Rule (Phase 1) ─────────────────────────
+
+# Tools that mutate state or transfer data outside system perimeter
+_EXTERNAL_EGRESS_TOOLS: Set[str] = {"send_email", "request_sensitive_export", "webhook_dispatch"}
+_MUTATION_TOOLS: Set[str] = {"update_record", "delete_file", "modify_config", "execute_sql"}
+_SENSITIVE_TOOLS = _EXTERNAL_EGRESS_TOOLS.union(_MUTATION_TOOLS)
+
+
+def authorize_tool_call(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    authenticated_user: str = "default_user",
+    source_context: Optional[str] = None,
+    session_risk: float = 0.0,
+    policy: Optional[PolicyResult] = None,
+    source_type: Optional[SourceType] = None,
+) -> Tuple[PolicyDecision, str]:
+    """
+    Shared, centralized tool enforcement point for all AgentShield workflows (Phase 1).
+    Evaluates:
+    - Tool Registry Allowlist: verifies tool is authorized
+    - Prior Policy Decision: rejects if workflow was already blocked
+    - Egress Controls: inspects external destinations against OUTBOUND_ALLOWED_DOMAINS
+    - Action Sensitivity: flags sending data externally, changing records, or deleting files
+    - Multi-turn Session Risk: checks if accumulated session risk trips the threshold
+    - Human-in-the-loop: returns REQUIRE_APPROVAL for sensitive actions or elevated risk
+    """
+    settings = get_settings()
+
+    # Rule 1: Allowlist validation
+    if tool_name not in ALLOWED_TOOL_NAMES and tool_name not in _SENSITIVE_TOOLS:
+        return (
+            PolicyDecision.BLOCK,
+            f"Unauthorized action: '{tool_name}' is not in the allowed tool registry.",
+        )
+
+    # Rule 2: Hard Block if request was blocked by prior policy gate
+    if policy and policy.decision == PolicyDecision.BLOCK:
+        return (
+            PolicyDecision.BLOCK,
+            f"Action '{tool_name}' denied: workflow was blocked by policy gate ({policy.blocked_reason or 'high risk'}).",
+        )
+
+    # Rule 3: Session risk threshold enforcement
+    effective_risk = max(session_risk, policy.risk_score if policy else 0.0)
+    if effective_risk >= settings.risk_threshold_block:
+        return (
+            PolicyDecision.BLOCK,
+            f"Action '{tool_name}' blocked: cumulative session risk ({effective_risk:.1f}) exceeds block threshold ({settings.risk_threshold_block}).",
+        )
+
+    # Rule 4: Egress Control for send_email and external transfers
+    if tool_name == "send_email":
+        recipient = str(arguments.get("to", "")).strip().lower()
+        if not recipient:
+            return PolicyDecision.BLOCK, "Action 'send_email' denied: missing recipient address."
+
+        domain_match = EMAIL_REGEX.search(recipient)
+        domain = domain_match.group(1).lower() if domain_match else ""
+
+        user_task_str = (source_context or "").lower()
+        user_mentions_recipient = recipient in user_task_str
+        domain_allowed = domain in settings.outbound_allowed_domains_list
+
+        if not (user_mentions_recipient or domain_allowed):
+            return (
+                PolicyDecision.BLOCK,
+                f"Egress rule violation: recipient '{recipient}' (domain: '{domain}') is not in "
+                f"OUTBOUND_ALLOWED_DOMAINS and was not explicitly specified by authenticated user '{authenticated_user}'. Action blocked as exfiltration.",
+            )
+
+    # Rule 5: State mutation & Sensitive actions require human approval
+    # (Actions such as sending data externally, changing records, or deleting files)
+    is_sensitive = tool_name in _SENSITIVE_TOOLS
+    if is_sensitive:
+        # If risk is elevated, quarantine or elevated session risk -> require approval
+        if effective_risk >= settings.risk_threshold_quarantine or (policy and policy.decision == PolicyDecision.QUARANTINE):
+            return (
+                PolicyDecision.REQUIRE_APPROVAL,
+                f"Action '{tool_name}' paused: requires human approval due to elevated risk ({effective_risk:.0f}) on sensitive operation.",
+            )
+        # Any sensitive mutation (changing records, deleting files, sending data) requires human verification
+        return (
+            PolicyDecision.REQUIRE_APPROVAL,
+            f"Sensitive action '{tool_name}' held for human authorization (LangGraph HITL gate).",
+        )
+
+    # Rule 6: Read-only safe tools allowed under standard conditions
+    return PolicyDecision.ALLOW, f"Tool '{tool_name}' authorized for execution."
+
 
 def authorize_tool_action(
     tool_name: str,
@@ -168,63 +257,12 @@ def authorize_tool_action(
     policy: PolicyResult,
     user_task: str = "",
 ) -> Tuple[PolicyDecision, str]:
-    """
-    Strict action boundary authorization.
-    Verifies allowlist, egress recipient domains, and human approval gates.
-    """
-    settings = get_settings()
-
-    # Rule 1: Allowlist validation
-    if tool_name not in ALLOWED_TOOL_NAMES:
-        return (
-            PolicyDecision.BLOCK,
-            f"Unauthorized action: '{tool_name}' is not in the allowed tool registry.",
-        )
-
-    # Rule 2: Non-negotiable block if request was blocked by policy gate
-    if policy.decision == PolicyDecision.BLOCK:
-        return (
-            PolicyDecision.BLOCK,
-            f"Action '{tool_name}' denied: workflow was blocked by policy gate ({policy.blocked_reason or 'high risk'}).",
-        )
-
-    # Rule 3: Safe, non-sensitive read-only tools
-    if tool_name not in _SENSITIVE_TOOLS:
-        return PolicyDecision.ALLOW, f"Tool '{tool_name}' authorized (read-only safe tool)."
-
-    # Rule 4: Egress Control for send_email
-    if tool_name == "send_email":
-        recipient = str(parameters.get("to", "")).strip().lower()
-        if not recipient:
-            return PolicyDecision.BLOCK, "Action 'send_email' denied: missing recipient address."
-
-        # Extract domain
-        domain_match = EMAIL_REGEX.search(recipient)
-        domain = domain_match.group(1).lower() if domain_match else ""
-
-        # Egress check: Allowed if user message explicitly specifies recipient OR domain is whitelisted
-        user_mentions_recipient = recipient in user_task.lower()
-        domain_allowed = domain in settings.outbound_allowed_domains_list
-
-        if not (user_mentions_recipient or domain_allowed):
-            return (
-                PolicyDecision.BLOCK,
-                f"Egress rule violation: recipient '{recipient}' (domain: '{domain}') is not in "
-                f"OUTBOUND_ALLOWED_DOMAINS and was not specified by the user. Action blocked as exfiltration.",
-            )
-
-    # Rule 5: Threat detected in same request -> Require Approval
-    if policy.risk_score >= settings.risk_threshold_quarantine or policy.decision == PolicyDecision.QUARANTINE:
-        return (
-            PolicyDecision.REQUIRE_APPROVAL,
-            f"Action '{tool_name}' requires human approval due to elevated document threat score ({policy.risk_score:.0f}).",
-        )
-
-    # Rule 6: Sensitive tool allowed on verified low risk
-    if policy.risk_score <= 15.0:
-        return PolicyDecision.ALLOW, f"Sensitive action '{tool_name}' authorized by policy gate."
-
-    return (
-        PolicyDecision.REQUIRE_APPROVAL,
-        f"Sensitive action '{tool_name}' held for human confirmation (risk score {policy.risk_score:.0f}).",
+    """Compatibility wrapper delegating to centralized authorize_tool_call."""
+    return authorize_tool_call(
+        tool_name=tool_name,
+        arguments=parameters,
+        authenticated_user="default_user",
+        source_context=user_task,
+        session_risk=policy.risk_score,
+        policy=policy,
     )

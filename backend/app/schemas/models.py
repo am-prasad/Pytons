@@ -86,6 +86,26 @@ class TraceEvent(BaseModel):
     detail: Optional[str] = None
 
 
+class TrackedContent(BaseModel):
+    """
+    Source metadata and scanning tracking for all agent-ingested content (Phase 2).
+    Tracks PDFs, retrieved documents, webpages, and tool responses.
+    """
+    content_id: str
+    source_type: SourceType
+    source_ref: str
+    raw_content: str
+    sanitized_content: str
+    is_untrusted: bool = True
+    scanned: bool = True
+    scanner_score: float = 0.0
+    scanner_patterns: List[str] = []
+    quarantined: bool = False
+    quarantine_reason: Optional[str] = None
+    timestamp: float = 0.0
+    metadata: Dict[str, Any] = {}
+
+
 # ─── Analysis Request / Response ──────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
@@ -257,6 +277,7 @@ class ApprovalRequest(BaseModel):
     tool_name: str
     parameters: Dict[str, Any] = {}
     session_id: Optional[str] = None
+    thread_id: Optional[str] = None
     risk_score: float = 0.0
     reason: str = ""
     status: str = "PENDING"  # "PENDING", "APPROVED", "REJECTED"
@@ -266,6 +287,9 @@ class ApprovalDecision(BaseModel):
     approval_id: str
     decision: str  # "APPROVE" or "REJECT"
     reviewer: Optional[str] = "admin"
+    edited_parameters: Optional[Dict[str, Any]] = None
+    thread_id: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ApprovalListResponse(BaseModel):

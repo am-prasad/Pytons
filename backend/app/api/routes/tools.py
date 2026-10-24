@@ -71,3 +71,53 @@ async def simulate_tool(body: ToolSimulateRequest) -> ToolSimulateResponse:
         explanation=auth_reason,
         latency_ms=round(latency, 2),
     )
+
+
+# ─── LangGraph HITL Endpoints (Phase 3) ──────────────────────────────────────
+
+@router.post("/tools/graph/run")
+async def run_hitl_graph_endpoint(body: Dict[str, Any]):
+    """
+    Executes an action through the checkpointed LangGraph HITL state machine.
+    Pauses execution at human_approval_gate if a sensitive action is proposed.
+    """
+    from app.graph.interactive_agent_graph import run_hitl_agent
+    prompt = str(body.get("prompt", "Analyze system records"))
+    thread_id = body.get("thread_id")
+    user = str(body.get("authenticated_user", "secops_analyst"))
+
+    state = await run_hitl_agent(
+        prompt=prompt,
+        thread_id=thread_id,
+        authenticated_user=user,
+    )
+    return state.model_dump()
+
+
+@router.post("/tools/graph/resume")
+async def resume_hitl_graph_endpoint(body: Dict[str, Any]):
+    """
+    Resumes a paused LangGraph thread from checkpointer:
+    Approves, edits, or rejects the held action and executes to completion.
+    """
+    from app.graph.interactive_agent_graph import resume_hitl_agent
+    thread_id = body.get("thread_id")
+    if not thread_id:
+        raise HTTPException(status_code=400, detail="Missing required 'thread_id'.")
+
+    decision = str(body.get("decision", "APPROVE")).upper()
+    edited_params = body.get("edited_parameters")
+    notes = body.get("reviewer_notes")
+
+    try:
+        resumed = await resume_hitl_agent(
+            thread_id=thread_id,
+            decision="APPROVE" if decision == "APPROVE" else "REJECT",
+            edited_parameters=edited_params,
+            reviewer_notes=notes,
+        )
+        return resumed.model_dump()
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to resume LangGraph thread: {exc}")

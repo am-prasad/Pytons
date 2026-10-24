@@ -9,6 +9,7 @@ Handles document upload (PDF/TXT), extraction, and dual-agent execution:
 """
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from app.services.alerts import get_all_alerts, get_pending_approvals, resolve_a
 from app.services.documents import validate_and_extract_document
 from app.services.tools import get_sandbox_exports, get_sandbox_outbox
 
+logger = logging.getLogger("agentshield.documents")
+
 router = APIRouter()
 
 
@@ -38,7 +41,7 @@ async def analyze_document_endpoint(
     session_id: Optional[str] = Form(default=None),
 ) -> DocumentAnalyzeResponse:
     """
-    Upload and analyze a PDF or TXT document through the full AgentShield security pipeline.
+    Upload and analyze a PDF, Word (.docx, .doc), or TXT document through the full AgentShield security pipeline.
     Runs side-by-side comparison of Unprotected Agent vs Protected Agent.
     """
     settings = get_settings()
@@ -58,6 +61,7 @@ async def analyze_document_endpoint(
         doc_meta, pages_data = validate_and_extract_document(file.filename or "document.txt", content)
     except ValueError as val_err:
         err_msg = str(val_err)
+        logger.error(f"[Document Route] Extraction validation failed for '{file.filename}': {err_msg}")
         if "Unsupported media type" in err_msg:
             raise HTTPException(status_code=415, detail=err_msg)
         elif "Image-only PDF" in err_msg:
@@ -155,11 +159,41 @@ async def list_approvals_endpoint():
 
 @router.post("/approvals/resolve")
 async def resolve_approval_endpoint(body: ApprovalDecision):
-    """Approve or reject a pending sensitive tool action."""
-    resolved = resolve_approval(body.approval_id, body.decision)
+    """
+    Approve, edit, or reject a pending sensitive tool action (Phase 3).
+    Resumes LangGraph execution checkpoint if a thread_id is associated.
+    """
+    resolved = resolve_approval(
+        approval_id=body.approval_id,
+        decision=body.decision,
+        edited_parameters=body.edited_parameters,
+        reviewer=body.reviewer or "admin",
+    )
     if not resolved:
         raise HTTPException(status_code=404, detail="Approval request not found or already resolved.")
-    return {"status": "success", "approval": resolved.model_dump()}
+
+    # Phase 3: If attached to a LangGraph HITL thread, resume the paused graph
+    thread_id = body.thread_id or resolved.thread_id
+    graph_result = None
+    if thread_id:
+        try:
+            from app.graph.interactive_agent_graph import resume_hitl_agent
+            resumed_state = await resume_hitl_agent(
+                thread_id=thread_id,
+                decision="APPROVE" if body.decision.upper() == "APPROVE" else "REJECT",
+                edited_parameters=body.edited_parameters,
+                reviewer_notes=body.notes,
+            )
+            graph_result = resumed_state.model_dump()
+        except Exception as exc:
+            pass
+
+    return {
+        "status": "success",
+        "approval": resolved.model_dump(),
+        "graph_resumed": bool(graph_result),
+        "graph_state": graph_result,
+    }
 
 
 @router.get("/sandbox/outbox")
