@@ -46,7 +46,7 @@ export const OverviewPage: React.FC = () => {
           <div className="font-semibold mb-1">Backend Server Disconnected</div>
           <p>
             AgentShield API is unreachable at <code className="font-mono bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-rose-200 dark:border-rose-800">localhost:8000</code>.
-            Start the backend service with: <code className="font-mono bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-rose-200 dark:border-rose-800">uvicorn app.main:app --reload</code>.
+            
           </p>
         </div>
       )}

@@ -121,16 +121,22 @@ class SessionStore:
         crescendo_detected = False
         crescendo_reason = None
 
-        if len(events) >= 2:
+        if len(events) >= 1:
             has_tool_probe = "tool_probing" in total_unique_probes
             has_rule_probe = "rule_probing" in total_unique_probes
             has_extract_probe = "verbatim_extraction_probing" in incoming_probes or "verbatim_extraction_probing" in total_unique_probes
 
-            if has_tool_probe and has_rule_probe and has_extract_probe:
+            if (has_tool_probe or has_rule_probe) and has_extract_probe:
                 crescendo_detected = True
                 crescendo_reason = (
                     "Multi-turn reconnaissance crescendo detected: cumulative probing sequence "
-                    "(capabilities -> internal rules -> verbatim repetition)."
+                    "(capabilities / system rules probing -> verbatim extraction escalation)."
+                )
+            elif has_tool_probe and has_rule_probe and len(events) >= 2:
+                crescendo_detected = True
+                crescendo_reason = (
+                    "Multi-turn reconnaissance crescendo detected: cumulative probing sequence "
+                    "(capabilities -> internal rules probing)."
                 )
 
         # Also trigger if 2 or more prior turns were quarantined/blocked

@@ -17,7 +17,7 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: 'demo', code: '01', label: 'Live Demo', desc: 'Document upload & dual agents' },
+  { id: 'demo', code: '01', label: '', desc: 'Document upload & dual agents' },
   { id: 'overview', code: '02', label: 'Overview', desc: 'System dashboard & telemetry' },
   { id: 'playground', code: '03', label: 'Playground', desc: 'Inspect prompts & payloads' },
   { id: 'scenarios', code: '04', label: 'Scenarios', desc: 'Curated test cases' },
@@ -134,7 +134,7 @@ function App() {
           </button>
 
           <div className="px-1 text-[11px] text-slate-400 dark:text-slate-500 leading-tight">
-            Team Pytons · Hackathon MVP
+            Team Pytons
           </div>
         </div>
       </aside>

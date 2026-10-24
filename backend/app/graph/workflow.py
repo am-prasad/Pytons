@@ -14,6 +14,14 @@ from langgraph.graph import StateGraph, END
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel
 
+try:
+    from langsmith import traceable
+except Exception:
+    def traceable(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
+
 from app.schemas.models import (
     AnalyzeRequest,
     AttackType,
@@ -156,10 +164,10 @@ def correlate_session_risk(state: GraphState) -> GraphState:
     t0 = time.monotonic()
     try:
         store = get_store()
-        correlation = store.get_correlation(state.session_id)
+        correlation = store.get_correlation(state.session_id, incoming_text=state.text)
         state.session_correlation = correlation
         detail = (
-            f"Session '{state.session_id}': {correlation.prior_risk_events} prior risky events"
+            f"Session '{state.session_id}': {correlation.prior_risk_events} prior risky events, probes={correlation.probing_count}, escalation={correlation.escalation_detected}"
             if state.session_id
             else "No session ID provided"
         )
@@ -215,9 +223,11 @@ def record_security_event(state: GraphState) -> GraphState:
                 decision=state.policy_result.decision,
                 attack_types=attack_types,
                 request_id=state.request_id,
+                text=state.text,
             )
         _record_node(state, "record_security_event", NodeStatus.RAN, t0,
                      "Security event recorded")
+
     except Exception as exc:
         _record_node(state, "record_security_event", NodeStatus.ERROR, t0, str(exc))
     return state
@@ -265,6 +275,7 @@ def build_graph() -> StateGraph:
 _compiled_graph = build_graph().compile()
 
 
+@traceable(name="AgentShield Single-Turn Security Pipeline", run_type="chain")
 async def run_security_pipeline(request: AnalyzeRequest) -> GraphState:
     """
     Execute the full security pipeline for a given analyze request.
@@ -280,7 +291,17 @@ async def run_security_pipeline(request: AnalyzeRequest) -> GraphState:
     )
 
     try:
-        final_state = await _compiled_graph.ainvoke(initial_state)
+        final_state = await _compiled_graph.ainvoke(
+            initial_state,
+            config={
+                "run_name": "agentshield_prompt_graph",
+                "tags": ["agentshield", "security_eval"],
+                "metadata": {
+                    "session_id": request.session_id,
+                    "source_type": request.source_type.value,
+                },
+            },
+        )
         return GraphState(**final_state) if isinstance(final_state, dict) else final_state
     except Exception as exc:
         logger.error("Pipeline execution error: %s", exc)

@@ -121,6 +121,10 @@ class Settings(BaseSettings):
         return bool(self.groq_api_key.strip())
 
     @property
+    def clean_langsmith_project(self) -> str:
+        return self.langsmith_project.strip(' "\'') or "Pythons"
+
+    @property
     def langsmith_configured(self) -> bool:
         return bool(self.langsmith_api_key.strip()) and self.langsmith_tracing
 
@@ -133,4 +137,14 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.langsmith_configured:
+        os.environ["LANGCHAIN_TRACING_V2"] = "true"
+        os.environ["LANGCHAIN_API_KEY"] = s.langsmith_api_key.strip()
+        os.environ["LANGCHAIN_PROJECT"] = s.clean_langsmith_project
+        os.environ["LANGCHAIN_ENDPOINT"] = s.langsmith_endpoint
+        os.environ["LANGSMITH_TRACING"] = "true"
+        os.environ["LANGSMITH_API_KEY"] = s.langsmith_api_key.strip()
+        os.environ["LANGSMITH_PROJECT"] = s.clean_langsmith_project
+        os.environ["LANGSMITH_ENDPOINT"] = s.langsmith_endpoint
+    return s

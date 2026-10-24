@@ -50,25 +50,26 @@ def _extract_text_from_pdf(content: bytes, max_pages: int) -> Tuple[List[Tuple[i
             page = reader.pages[p_idx]
             text = page.extract_text() or ""
             pages_text.append((p_idx + 1, text))
-        return pages_text, total_pages
-    except ImportError:
-        pass
-    except Exception as exc:
+        extracted_chars = sum(len(t.strip()) for _, t in pages_text)
+        if extracted_chars > 0:
+            return pages_text, total_pages
+    except Exception:
         pass
 
     # Native fallback PDF stream extractor (handles standard Text objects: BT ... ET)
     try:
         stream_str = content.decode('latin-1', errors='ignore')
-        # Simple regex for PDF text chunks within (text) Tj or TJ
         text_blocks = []
         for match in re.finditer(r'BT\s*(.*?)\s*ET', stream_str, re.DOTALL):
             bt_content = match.group(1)
-            # Find literal strings (string)
-            strings = re.findall(r'\((.*?)\)\s*T[jd]', bt_content)
-            if strings:
-                text_blocks.append(" ".join(strings))
+            raw_strings = re.findall(r'\((.*?)\)', bt_content)
+            for s in raw_strings:
+                s_clean = s.replace(r'\\', '\\').replace(r'\(', '(').replace(r'\)', ')')
+                if s_clean.strip():
+                    text_blocks.append(s_clean)
         extracted = "\n".join(text_blocks)
-        return [(1, extracted)], 1
+        if extracted.strip():
+            return [(1, extracted)], 1
     except Exception:
         return [], 0
 

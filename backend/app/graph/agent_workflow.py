@@ -20,6 +20,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel
 
+try:
+    from langsmith import traceable
+except Exception:
+    def traceable(*args, **kwargs):
+        def decorator(fn):
+            return fn
+        return decorator
+
 from app.core.config import get_settings
 from app.policy import gate as policy_gate
 from app.schemas.models import (
@@ -107,6 +115,7 @@ def _record_step(
     )
 
 
+@traceable(name="AgentShield Dual Agent Workflow", run_type="chain")
 async def execute_document_security_pipeline(
     task: str,
     doc_meta: DocumentMetadata,
@@ -455,3 +464,45 @@ async def execute_document_security_pipeline(
     _record_step(state, "persist_audit", NodeStatus.RAN, t0_audit, "Security telemetry and session event logged.")
 
     return state
+
+
+async def run_dual_agent_workflow(
+    task: str,
+    chunks: Optional[List[DocumentChunk]] = None,
+    meta: Optional[DocumentMetadata] = None,
+    session_id: Optional[str] = None,
+    pages_data: Optional[List[Tuple[int, str]]] = None,
+) -> Dict[str, Any]:
+    """
+    Convenience wrapper for scripts and evaluations to run the dual agent workflow.
+    Returns: {"unprotected": unprot_result, "protected": prot_result, "state": state}
+    """
+    if not meta:
+        meta = DocumentMetadata(
+            filename="scenario_document.txt",
+            file_type="txt",
+            file_size_bytes=1024,
+            pages=1,
+            extracted_chars=500,
+        )
+    if not pages_data:
+        if chunks:
+            pages_dict = {}
+            for c in chunks:
+                pages_dict.setdefault(c.page, []).append(c.content)
+            pages_data = [(page_num, "\n".join(texts)) for page_num, texts in sorted(pages_dict.items())]
+        else:
+            pages_data = [(1, "")]
+
+    state = await execute_document_security_pipeline(
+        task=task,
+        doc_meta=meta,
+        pages_data=pages_data,
+        session_id=session_id,
+    )
+    return {
+        "unprotected": state.unprotected_result,
+        "protected": state.protected_result,
+        "state": state,
+    }
+
