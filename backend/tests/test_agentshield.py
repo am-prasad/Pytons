@@ -4,7 +4,7 @@ Tests cover: scanner, policy gate, session isolation, and API endpoints.
 All external model services are mocked.
 """
 from __future__ import annotations
-
+import os
 import json
 import pytest
 import asyncio
