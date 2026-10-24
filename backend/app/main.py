@@ -28,8 +28,7 @@ def create_app() -> FastAPI:
         title="AgentShield API",
         description=(
             "AI Agent Security Pipeline: Prompt Injection Detection & Prevention\n\n"
-            "⚠️ This is an MVP prototype. Detection is probabilistic. "
-            "This is not a certified security product."
+          
         ),
         version="1.0.0",
         docs_url="/docs",

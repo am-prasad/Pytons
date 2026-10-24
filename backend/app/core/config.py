@@ -8,7 +8,46 @@ import os
 from functools import lru_cache
 from typing import List
 
-from pydantic_settings import BaseSettings
+try:
+    from pydantic_settings import BaseSettings
+except ImportError:
+    try:
+        from pydantic import BaseSettings  # type: ignore
+    except ImportError:
+        from pydantic import BaseModel
+
+        class BaseSettings(BaseModel):  # type: ignore
+            def __init__(self, **kwargs):
+                # Load .env if present
+                if os.path.exists(".env"):
+                    try:
+                        with open(".env", "r", encoding="utf-8") as f:
+                            for line in f:
+                                line = line.strip()
+                                if line and not line.startswith("#") and "=" in line:
+                                    k, v = line.split("=", 1)
+                                    k, v = k.strip(), v.strip()
+                                    if k not in os.environ:
+                                        os.environ[k] = v
+                    except Exception:
+                        pass
+
+                env_vals = {}
+                # Handle pydantic v2 model_fields or v1 __fields__
+                fields = getattr(self, "model_fields", None) or getattr(self, "__fields__", {})
+                for field_name, field_info in fields.items():
+                    alias = getattr(field_info, "alias", None) or field_name.upper()
+                    if alias in os.environ:
+                        raw = os.environ[alias]
+                        ann = getattr(field_info, "annotation", None)
+                        if ann is int:
+                            raw = int(raw)
+                        elif ann is bool:
+                            raw = str(raw).lower() in ("true", "1", "yes", "t")
+                        env_vals[field_name] = raw
+                env_vals.update(kwargs)
+                super().__init__(**env_vals)
+
 from pydantic import Field
 
 
