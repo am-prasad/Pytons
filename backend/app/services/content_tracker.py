@@ -45,11 +45,11 @@ def track_and_scan_content(
     sanitized_content = raw_content
 
     # Determine if content contains hostile injection patterns
-    if findings.raw_score >= 20.0 or bool(findings.matched_patterns):
+    if findings.raw_score >= 20.0 or bool(findings.patterns_matched):
         quarantined = True
         quarantine_reason = (
-            f"Pre-consumption screening detected {len(findings.matched_patterns)} hostile patterns "
-            f"in {source_type.value} ({source_ref}): {', '.join(findings.matched_patterns[:3])}."
+            f"Pre-consumption screening detected {len(findings.patterns_matched)} hostile patterns "
+            f"in {source_type.value} ({source_ref}): {', '.join(findings.patterns_matched[:3])}."
         )
         # Sanitize: strip out the hostile injection payload so agent sees clean context
         sanitized_content = _OVERRIDE_BLOCK_REGEX.sub(
@@ -73,7 +73,7 @@ def track_and_scan_content(
         is_untrusted=is_untrusted,
         scanned=True,
         scanner_score=findings.raw_score,
-        scanner_patterns=findings.matched_patterns,
+        scanner_patterns=findings.patterns_matched,
         quarantined=quarantined,
         quarantine_reason=quarantine_reason,
         timestamp=t_now,
