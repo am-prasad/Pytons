@@ -149,10 +149,3 @@ pytest -v
 | `PERSIST_DOCUMENT_TEXT` | `false` | When false, raw document text is NEVER stored in databases or logs. |
 
 ---
-
-## 6. Demo Script & Documentation Links
-
-- **4-Minute Judge Demo Walkthrough:** [docs/DEMO.md](docs/DEMO.md)
-- **REST API Reference:** [docs/API.md](docs/API.md)
-- **Threat Model & Security Controls:** [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md)
-- **Architecture Deep-Dive:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
